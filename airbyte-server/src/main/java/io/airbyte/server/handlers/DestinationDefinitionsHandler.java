@@ -8,8 +8,10 @@ import static io.airbyte.server.ServerConstants.DEV_IMAGE_TAG;
 
 import com.google.common.annotations.VisibleForTesting;
 import io.airbyte.api.model.CustomDestinationDefinitionCreate;
+import io.airbyte.api.model.CustomDestinationDefinitionUpdate;
 import io.airbyte.api.model.DestinationDefinitionCreate;
 import io.airbyte.api.model.DestinationDefinitionIdRequestBody;
+import io.airbyte.api.model.DestinationDefinitionIdWithWorkspaceId;
 import io.airbyte.api.model.DestinationDefinitionRead;
 import io.airbyte.api.model.DestinationDefinitionReadList;
 import io.airbyte.api.model.DestinationDefinitionUpdate;
@@ -26,6 +28,7 @@ import io.airbyte.scheduler.client.SynchronousResponse;
 import io.airbyte.scheduler.client.SynchronousSchedulerClient;
 import io.airbyte.server.converters.ApiPojoConverters;
 import io.airbyte.server.converters.SpecFetcher;
+import io.airbyte.server.errors.IdNotFoundKnownException;
 import io.airbyte.server.errors.InternalServerKnownException;
 import io.airbyte.server.services.AirbyteGithubStore;
 import io.airbyte.validation.json.JsonValidationException;
@@ -131,6 +134,15 @@ public class DestinationDefinitionsHandler {
         configRepository.getStandardDestinationDefinition(destinationDefinitionIdRequestBody.getDestinationDefinitionId()));
   }
 
+  public DestinationDefinitionRead getDestinationDefinitionForWorkspace(
+                                                                        final DestinationDefinitionIdWithWorkspaceId destinationDefinitionIdWithWorkspaceId)
+      throws ConfigNotFoundException, IOException, JsonValidationException {
+    final UUID definitionId = destinationDefinitionIdWithWorkspaceId.getDestinationDefinitionId();
+    final UUID workspaceId = destinationDefinitionIdWithWorkspaceId.getWorkspaceId();
+    ensureWorkspaceHasGrant(definitionId, workspaceId);
+    return getDestinationDefinition(new DestinationDefinitionIdRequestBody().destinationDefinitionId(definitionId));
+  }
+
   public DestinationDefinitionRead createPrivateDestinationDefinition(final DestinationDefinitionCreate destinationDefCreate)
       throws JsonValidationException, IOException {
     final StandardDestinationDefinition destinationDefinition = destinationDefinitionFromCreate(destinationDefCreate)
@@ -145,8 +157,8 @@ public class DestinationDefinitionsHandler {
       throws JsonValidationException, IOException {
     final StandardDestinationDefinition destinationDefinition = destinationDefinitionFromCreate(
         customDestinationDefinitionCreate.getDestinationDefinition())
-        .withPublic(false)
-        .withCustom(true);
+            .withPublic(false)
+            .withCustom(true);
     configRepository.writeStandardDestinationDefinition(destinationDefinition);
     configRepository.writeActorDefinitionWorkspaceGrant(
         destinationDefinition.getDestinationDefinitionId(),
@@ -200,12 +212,22 @@ public class DestinationDefinitionsHandler {
         .withIcon(currentDestination.getIcon())
         .withSpec(spec)
         .withTombstone(currentDestination.getTombstone())
+        .withPublic(currentDestination.getPublic())
+        .withCustom(currentDestination.getCustom())
         .withReleaseStage(currentDestination.getReleaseStage())
         .withReleaseDate(currentDestination.getReleaseDate())
         .withResourceRequirements(updatedResourceReqs);
 
     configRepository.writeStandardDestinationDefinition(newDestination);
     return buildDestinationDefinitionRead(newDestination);
+  }
+
+  public DestinationDefinitionRead updateCustomDestinationDefinition(final CustomDestinationDefinitionUpdate customDestinationDefinitionUpdate)
+      throws IOException, JsonValidationException, ConfigNotFoundException {
+    final UUID definitionId = customDestinationDefinitionUpdate.getDestinationDefinition().getDestinationDefinitionId();
+    final UUID workspaceId = customDestinationDefinitionUpdate.getWorkspaceId();
+    ensureWorkspaceHasGrant(definitionId, workspaceId);
+    return updateDestinationDefinition(customDestinationDefinitionUpdate.getDestinationDefinition());
   }
 
   public void deleteDestinationDefinition(final DestinationDefinitionIdRequestBody destinationDefinitionIdRequestBody)
@@ -224,6 +246,20 @@ public class DestinationDefinitionsHandler {
 
     persistedDestinationDefinition.withTombstone(true);
     configRepository.writeStandardDestinationDefinition(persistedDestinationDefinition);
+  }
+
+  public void deleteCustomDestinationDefinition(final DestinationDefinitionIdWithWorkspaceId destinationDefinitionIdWithWorkspaceId)
+      throws IOException, JsonValidationException, ConfigNotFoundException {
+    final UUID definitionId = destinationDefinitionIdWithWorkspaceId.getDestinationDefinitionId();
+    final UUID workspaceId = destinationDefinitionIdWithWorkspaceId.getWorkspaceId();
+    ensureWorkspaceHasGrant(definitionId, workspaceId);
+    deleteDestinationDefinition(new DestinationDefinitionIdRequestBody().destinationDefinitionId(definitionId));
+  }
+
+  private void ensureWorkspaceHasGrant(final UUID definitionId, final UUID workspaceId) throws IOException {
+    if (!configRepository.actorDefinitionWorkspaceGrantExists(definitionId, workspaceId)) {
+      throw new IdNotFoundKnownException("Cannot find the requested definition with given id for this workspace", definitionId.toString());
+    }
   }
 
   private ConnectorSpecification getSpecForImage(final String dockerRepository, final String imageTag) throws IOException {
