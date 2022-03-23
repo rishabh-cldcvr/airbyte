@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 
 # This install scripts currently only works for ZSH and Bash profiles.
-# It creates an octavia alias in your profile bound to a docker run command
+# It creates an octavia alias in your profile bound to a docker run command and your current user.
 
 VERSION=0.1.0
 OCTAVIA_ENV_FILE=${HOME}/.octavia
 USER_ID=$(id -u)
 GROUP_ID=$(id -g)
+
 detect_profile() {
     if [ "${SHELL#*bash}" != "$SHELL" ]; then
         if [ -f "$HOME/.bashrc" ]; then
