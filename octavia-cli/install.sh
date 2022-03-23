@@ -5,7 +5,8 @@
 
 VERSION=0.1.0
 OCTAVIA_ENV_FILE=${HOME}/.octavia
-
+USER_ID=$(id -u)
+GROUP_ID=$(id -g)
 detect_profile() {
     if [ "${SHELL#*bash}" != "$SHELL" ]; then
         if [ -f "$HOME/.bashrc" ]; then
@@ -55,7 +56,7 @@ create_octavia_env_file() {
 
 
 add_alias() {
-    echo 'alias octavia="pwd | xargs -o -I {} docker run -i --rm -v {}:/home/octavia-project --network host --env-file \${OCTAVIA_ENV_FILE} airbyte/octavia-cli:'${VERSION}'"'  >> ${DETECTED_PROFILE}
+    echo 'alias octavia="pwd | xargs -o -I {} docker run -i --rm -v {}:/home/octavia-project --network host --env-file \${OCTAVIA_ENV_FILE} --user \${USER_ID}:\${GROUP_ID} airbyte/octavia-cli:'${VERSION}'"'  >> ${DETECTED_PROFILE}
     echo "🐙 - 🎉 octavia alias was added to ${DETECTED_PROFILE}, please open a new terminal window or run source ${DETECTED_PROFILE}"
 }
 
